@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One Container, Five Buckets of Events</title>
+<meta name="author" content="Emilio Solanes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #E4EAEA; --panel: #F5F8F8; --panel-2: #E9EFEF; --ink: #12232A; --muted: #586B72; --line: #C9D4D6; --accent: #D9531E;
+  --f-shp: #8A4FA8; --f-trn: #3A55B4; --f-eqp: #D2601A; --f-iot: #2E8B57; --f-rfr: #1696B8;
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif; --font-body: 'Instrument Sans', system-ui, sans-serif; --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0B1317; --panel: #111C22; --panel-2: #172530; --ink: #DEE8EB; --muted: #8DA1A9; --line: #233540; --accent: #FF7A48;
+    --f-shp: #C08CE0; --f-trn: #8EA2F0; --f-eqp: #FF8A4C; --f-iot: #5CCB8C; --f-rfr: #55C8EA; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-body); padding: 16px; }
+main { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+main > * { min-width: 0; }
+header.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.eyebrow { font: 600 12px var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 700 30px/1 var(--font-display); text-transform: uppercase; margin: 4px 0 0; letter-spacing: .01em; }
+.controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.btn { font: 600 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; height: 38px; min-width: 38px; padding: 0 10px; cursor: pointer; }
+.btn.play { background: var(--ink); color: var(--panel); border-color: var(--ink); border-radius: 50%; width: 46px; height: 46px; }
+.btn:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { font: 500 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; position: relative; }
+.fb { display: inline-block; font: 700 10.5px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--fc); padding: 4px 7px; border-radius: 4px; }
+.st { font: 600 11px/1 var(--font-body); padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.st::before, .stg::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; margin-right: 5px; vertical-align: -1px; box-sizing: border-box; }
+.st.Estimated::before, .stg.Estimated::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.st.Actual::before, .stg.Actual::before { background: currentColor; }
+
+/* route */
+#route { width: 100%; height: auto; display: block; }
+#route .leg { stroke: var(--line); stroke-width: 4; stroke-linecap: round; }
+#route .leg.Vessel { stroke-dasharray: 2 7; }
+#route .leg.done { stroke: var(--ink); }
+#route .stop circle { fill: var(--panel); stroke: var(--ink); stroke-width: 2; }
+#route .stop.here circle { fill: var(--accent); stroke: var(--accent); }
+#route .stop text { font: 600 11.5px var(--font-body); fill: var(--ink); text-anchor: middle; }
+#route .stop text.sub { font: 500 10.5px var(--font-body); fill: var(--muted); }
+#route .stop { cursor: pointer; }
+#route .mode { font: 600 10px var(--font-mono); fill: var(--muted); text-anchor: middle; letter-spacing: .06em; text-transform: uppercase; }
+#box { transition: transform .55s cubic-bezier(.4, 0, .2, 1); }
+#box rect.b { fill: var(--accent); stroke: var(--accent); stroke-width: 2; }
+#box.empty rect.b { fill: var(--panel); }
+#box.none { opacity: .25; }
+#box text { font: 600 10px var(--font-mono); fill: var(--muted); text-anchor: middle; }
+
+/* stage line on the route card */
+.stage { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.stage .k { font: 600 11px var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.stage .v { font: 600 15px var(--font-body); }
+.stage .d { font: 600 13px var(--font-mono); color: var(--muted); white-space: nowrap; }
+
+/* buckets */
+#buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.bucket { border: 2px solid var(--fc); border-radius: 12px; background: var(--panel); display: flex; flex-direction: column; min-width: 0; overflow: hidden; transition: opacity .25s, box-shadow .25s, transform .25s; opacity: .62; }
+.bucket.on { opacity: 1; box-shadow: 0 10px 28px rgb(0 0 0 / .14); transform: translateY(-3px); border-width: 3px; }
+.started .bucket { opacity: .62; } .bucket.on { opacity: 1; }
+body:not(.started) .bucket { opacity: 1; }
+.bucket .bh { background: var(--fc); color: #fff; padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+.bucket .bh .t { font: 700 13px var(--font-body); letter-spacing: .08em; text-transform: uppercase; }
+.bucket .bh .s { font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bucket .bh .n { margin-left: auto; font: 700 24px/1 var(--font-mono); }
+.pile { height: 128px; display: flex; flex-wrap: wrap-reverse; align-content: flex-start; gap: 3px; padding: 10px; background: color-mix(in srgb, var(--fc) 8%, var(--panel)); border-bottom: 2px solid var(--fc); }
+.brick { width: 22px; height: 13px; border-radius: 3px; background: var(--fc); border: 1.6px solid var(--fc); cursor: pointer; padding: 0; appearance: none; display: block; }
+.brick:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+.brick.Planned { background: var(--panel); }
+.brick.Estimated { background: linear-gradient(90deg, var(--fc) 50%, var(--panel) 50%); }
+.brick.latest { outline: 2.5px solid var(--ink); outline-offset: 1px; }
+.brick.drop { animation: drop .4s cubic-bezier(.3, 1.4, .6, 1); }
+@keyframes drop { from { transform: translateY(-60px); opacity: 0; } 50% { opacity: 1; } }
+.brick:hover { outline: 2px solid var(--ink); }
+.ev { padding: 10px 12px 12px; min-height: 118px; display: grid; align-content: start; gap: 4px; }
+.ev .h { font: 600 11.5px var(--font-mono); color: var(--muted); }
+.ev .w { font: 600 14.5px/1.3 var(--font-body); }
+.ev .m { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.ev .empty { color: var(--muted); font-size: 12.5px; }
+.ev .pub { font: 500 11px var(--font-mono); color: var(--muted); }
+.bucket.on .ev { background: color-mix(in srgb, var(--fc) 12%, var(--panel)); }
+.bucket.on .ev .w { font-size: 16px; }
+.bucket.on .ev .h { color: var(--ink); }
+
+/* mode switch */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; height: 38px; margin-right: 6px; }
+.seg button { font: 600 13px var(--font-body); border: 0; background: var(--panel); color: var(--muted); padding: 0 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+
+/* story card: the key moment, then a notch pointing at the bucket that just got the event */
+#story { border-left: 6px solid var(--fc, var(--ink)); padding: 12px 18px 14px; transition: border-color .25s; }
+#story::after { content: ''; position: absolute; bottom: -10px; left: var(--nx, 50%); width: 18px; height: 18px; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: translateX(-50%) rotate(45deg); opacity: 0; transition: left .3s, opacity .2s; }
+#story.point::after { opacity: 1; }
+#story .sh { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+#story .lab { font: 600 11px var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+#story .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 10px 22px; align-items: center; }
+#story h2 { font: 600 21px/1.2 var(--font-body); margin: 0 0 6px; }
+#story .act { margin: 0; font-size: 14.5px; }
+#story .act b { color: var(--fc, var(--ink)); }
+#story .meta { margin-top: 6px; font: 500 11.5px var(--font-mono); color: var(--muted); }
+#story.past h2, #story.past .act, #story.past .relay { opacity: .6; }
+.relay { display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1.2fr); align-items: stretch; }
+.relay .p { background: var(--panel-2); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.relay .p .k { font: 600 10.5px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.relay .p .v { font: 600 14px/1.25 var(--font-body); }
+.relay .p.none .v { color: var(--muted); font-weight: 500; }
+.relay .arr { align-self: center; text-align: center; color: var(--muted); font-weight: 700; }
+.chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--panel); color: var(--muted); font: 600 12px var(--font-mono); cursor: pointer; padding: 0; }
+.chip.done { background: var(--cc); border-color: var(--cc); color: #fff; }
+.chip.cur { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+.chip:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+
+/* progress */
+.prog { display: flex; align-items: center; gap: 10px; }
+.prog input { flex: 1; accent-color: var(--accent); }
+.prog .c { font: 600 12px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+footer { font-size: 12px; color: var(--muted); }
+footer p { margin: 0 0 4px; }
+.credit { position: absolute; right: 14px; bottom: 10px; font: 500 11px var(--font-mono); opacity: .55; }
+
+/* event card */
+#dlg { position: fixed; inset: 0; background: rgb(10 22 28 / .45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+#dlg[hidden] { display: none; }
+#dlg .modal { background: var(--panel); border-radius: 14px; padding: 16px 18px; width: min(480px, 100%); box-shadow: 0 20px 60px rgb(0 0 0 / .3); }
+#dlg h3 { font: 700 22px/1.1 var(--font-display); text-transform: uppercase; margin: 8px 0 12px; }
+#dlg .kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 13.5px; }
+#dlg .kv .k { color: var(--muted); font-size: 12px; }
+#dlg .kv .sep { grid-column: 1 / -1; border-top: 1px solid var(--line); margin: 4px 0 0; }
+@media (max-width: 900px) { .route-wrap { overflow-x: auto; } #route { min-width: 880px; } #buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); } h1 { font-size: 26px; }
+  #story .body { grid-template-columns: minmax(0, 1fr); } #story.point::after { opacity: 0; } .credit { position: static; display: block; text-align: right; margin-top: 6px; } }
+@media (max-width: 560px) { .relay { grid-template-columns: minmax(0, 1fr); gap: 4px; } .relay .arr { transform: rotate(90deg); height: 14px; line-height: 14px; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <div class="eyebrow">Track and Trace · one container · origin to destination</div>
+      <h1>Five buckets of events</h1>
+    </div>
+    <div class="controls" role="group" aria-label="Playback">
+      <div class="seg" role="group" aria-label="Mode"><button type="button" id="m-guided" aria-pressed="true">10 key moments</button><button type="button" id="m-all" aria-pressed="false">All 132 events</button></div>
+      <button class="btn" id="b-start" type="button" title="Back to the start" aria-label="Back to the start">&#x23EE;</button>
+      <button class="btn" id="b-prev" type="button" title="Back (left arrow)" aria-label="Back">&#x25C0;</button>
+      <button class="btn play" id="b-play" type="button" aria-label="Play">&#x25B6;</button>
+      <button class="btn" id="b-next" type="button" title="Next (right arrow)" aria-label="Next">&#x25B6;|</button>
+      <select id="speed" aria-label="Speed"><option value="0.5">1 event / 2 s</option><option value="1" selected>1 event/s</option><option value="2">2 events/s</option><option value="4">4 events/s</option><option value="8">8 events/s</option></select>
+    </div>
+  </header>
+
+  <section class="card" aria-label="Where the container is">
+    <div class="stage"><div><span class="k">Stage</span> <span class="v" id="stage">Before the journey</span></div><span class="d" id="when"></span></div>
+    <div class="route-wrap"><svg id="route" viewBox="0 0 1210 112" role="img" aria-label="Route from Duisburg to Chicago"></svg></div>
+  </section>
+
+  <section class="card" id="story" aria-live="polite">
+    <div class="sh"><div class="lab" id="s-lab">Ten key moments</div><div class="chips" id="chips" role="group" aria-label="Jump to a key moment"></div></div>
+    <div class="body">
+      <div><h2 id="s-title"></h2><p class="act" id="s-act"></p><div class="meta" id="s-meta"></div></div>
+      <div class="relay" id="s-relay"></div>
+    </div>
+  </section>
+
+  <section id="buckets" aria-label="Event buckets"></section>
+
+  <section class="card">
+    <div class="prog"><span class="c" id="count">0 / 0</span><input type="range" id="scrub" min="0" max="1" value="0" aria-label="Event number"><span class="c" id="date"></span></div>
+    <div class="legend" style="margin-top:8px"><span class="stg Planned">planned</span><span class="stg Estimated">estimated</span><span class="stg Actual">actual</span><span>Each brick is one event. Click it for the details.</span><span>Arrow keys step, space plays.</span><span>In key moments mode, play holds on each moment.</span></div>
+    <div class="credit">by emilio.solanes</div>
+  </section>
+
+  <footer>
+    <p><b>Illustrative storyline.</b> One temperature-controlled container from a cold store in Duisburg by rail to Rotterdam, by sea through Algeciras to New York, by rail to Chicago and by truck to the consignee, then back empty. Not a claim that any carrier publishes every event. Places are generic; company names are left out. Senders, forwarders and receivers in the ten key moments are typical roles, shown for illustration. Real trackers and reefer units report far more often than the one reading per leg shown here.</p>
+    <p>Event types and names follow the DCSA Track and Trace standard: Shipment, Transport, Equipment, IoT and Reefer.</p>
+    <p>Simulated data. Personal project, not affiliated with the companies shown. by emilio.solanes</p>
+  </footer>
+</main>
+
+<div id="dlg" hidden role="dialog" aria-modal="true"><div class="modal" id="dlg-body"></div></div>
+
+<script>
+const STORY = [{"seq":1,"xl":1,"section":"Commercial setup and booking","family":"Shipment","status":"Actual","spec":"Received","what":"Carrier booking request received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767600000.0,"pub":1767600120.0,"local":"Mon 5 Jan 09:00","tz":"UTC+1"},{"seq":2,"xl":2,"section":"Booking and shipment documents","family":"Shipment","status":"Actual","spec":"Received","what":"Booking received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767607200.0,"pub":1767607320.0,"local":"Mon 5 Jan 11:00","tz":"UTC+1"},{"seq":3,"xl":3,"section":"Booking and shipment documents","family":"Shipment","status":"Actual","spec":"Confirmed","what":"Booking confirmed","where":null,"pos":null,"laden":null,"mode":null,"utc":1767690000.0,"pub":1767690120.0,"local":"Tue 6 Jan 10:00","tz":"UTC+1"},{"seq":4,"xl":4,"section":"Origin documentation and regulatory preparation","family":"Shipment","status":"Actual","spec":"Received","what":"Certificate of analysis received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767777000.0,"pub":1767777120.0,"local":"Wed 7 Jan 10:10","tz":"UTC+1"},{"seq":5,"xl":5,"section":"Origin documentation and regulatory preparation","family":"Shipment","status":"Actual","spec":"Received","what":"Certificate of origin received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767777600.0,"pub":1767777720.0,"local":"Wed 7 Jan 10:20","tz":"UTC+1"},{"seq":6,"xl":6,"section":"Origin documentation and regulatory preparation","family":"Shipment","status":"Actual","spec":"Received","what":"Health certificate received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767778200.0,"pub":1767778320.0,"local":"Wed 7 Jan 10:30","tz":"UTC+1"},{"seq":7,"xl":7,"section":"Origin documentation and regulatory preparation","family":"Shipment","status":"Actual","spec":"Received","what":"Fumigation certificate received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767778800.0,"pub":1767778920.0,"local":"Wed 7 Jan 10:40","tz":"UTC+1"},{"seq":8,"xl":8,"section":"Origin documentation and regulatory preparation","family":"Shipment","status":"Actual","spec":"Received","what":"Pre-shipment inspection certificate received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767779400.0,"pub":1767779520.0,"local":"Wed 7 Jan 10:50","tz":"UTC+1"},{"seq":9,"xl":9,"section":"Booking and shipment documents","family":"Shipment","status":"Actual","spec":"Received","what":"Shipping instructions received","where":null,"pos":null,"laden":null,"mode":null,"utc":1767780000.0,"pub":1767780120.0,"local":"Wed 7 Jan 11:00","tz":"UTC+1"},{"seq":10,"xl":10,"section":"Booking and shipment documents","family":"Shipment","status":"Actual","spec":"Completed","what":"Shipping instructions completed","where":null,"pos":null,"laden":null,"mode":null,"utc":1767787200.0,"pub":1767787320.0,"local":"Wed 7 Jan 13:00","tz":"UTC+1"},{"seq":11,"xl":11,"section":"Origin empty positioning","family":"Equipment","status":"Actual","spec":"Available for pickup","what":"Empty reefer available for pickup at Duisburg depot","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":"Truck","utc":1767787500.0,"pub":1767787620.0,"local":"Wed 7 Jan 13:05","tz":"UTC+1"},{"seq":12,"xl":12,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Pairing","what":"IoT device paired with the empty reefer","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":null,"utc":1767787800.0,"pub":1767787920.0,"local":"Wed 7 Jan 13:10","tz":"UTC+1"},{"seq":13,"xl":13,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Device status","what":"IoT device reports operational status before dispatch","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":null,"utc":1767787920.0,"pub":1767788040.0,"local":"Wed 7 Jan 13:12","tz":"UTC+1"},{"seq":14,"xl":14,"section":"Origin empty positioning","family":"Equipment","status":"Actual","spec":"Loaded","what":"Empty reefer loaded onto pickup truck at depot","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":"Truck","utc":1767788100.0,"pub":1767788220.0,"local":"Wed 7 Jan 13:15","tz":"UTC+1"},{"seq":15,"xl":15,"section":"Origin empty positioning","family":"Equipment","status":"Actual","spec":"Gated out","what":"Empty reefer gated out from Duisburg depot","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":"Truck","utc":1767788400.0,"pub":1767788520.0,"local":"Wed 7 Jan 13:20","tz":"UTC+1"},{"seq":16,"xl":16,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on the empty-positioning leg","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":"Truck","utc":1767788520.0,"pub":1767788640.0,"local":"Wed 7 Jan 13:22","tz":"UTC+1"},{"seq":17,"xl":17,"section":"Origin empty positioning","family":"Transport","status":"Actual","spec":"Departed","what":"Truck departed Duisburg depot with empty reefer","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":"Truck","utc":1767788580.0,"pub":1767788700.0,"local":"Wed 7 Jan 13:23","tz":"UTC+1"},{"seq":18,"xl":18,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the Duisburg depot geofence","where":"Empty depot, Duisburg","pos":0,"laden":false,"mode":"Truck","utc":1767788700.0,"pub":1767788820.0,"local":"Wed 7 Jan 13:25","tz":"UTC+1"},{"seq":19,"xl":19,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update during empty positioning","where":"On the road, Duisburg","pos":0.5,"laden":false,"mode":"Truck","utc":1767789300.0,"pub":1767789420.0,"local":"Wed 7 Jan 13:35","tz":"UTC+1"},{"seq":20,"xl":20,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the shipper geofence","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":"Truck","utc":1767789780.0,"pub":1767789900.0,"local":"Wed 7 Jan 13:43","tz":"UTC+1"},{"seq":21,"xl":21,"section":"Origin empty positioning","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at the shipper","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":"Truck","utc":1767789840.0,"pub":1767789960.0,"local":"Wed 7 Jan 13:44","tz":"UTC+1"},{"seq":22,"xl":22,"section":"Origin empty positioning","family":"Transport","status":"Actual","spec":"Arrived","what":"Truck arrived at origin cold store with empty reefer","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":"Truck","utc":1767789900.0,"pub":1767790020.0,"local":"Wed 7 Jan 13:45","tz":"UTC+1"},{"seq":23,"xl":23,"section":"Origin empty positioning","family":"Equipment","status":"Actual","spec":"Dropped off","what":"Empty reefer dropped off at origin cold store","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":"Truck","utc":1767790200.0,"pub":1767790320.0,"local":"Wed 7 Jan 13:50","tz":"UTC+1"},{"seq":24,"xl":24,"section":"Origin loading and pre-carriage","family":"Shipment","status":"Actual","spec":"Requested","what":"Cargo survey requested before stuffing","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":null,"utc":1767790320.0,"pub":1767790440.0,"local":"Wed 7 Jan 13:52","tz":"UTC+1"},{"seq":25,"xl":25,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Door opened","what":"Door opened before cargo stuffing","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":null,"utc":1767790500.0,"pub":1767790620.0,"local":"Wed 7 Jan 13:55","tz":"UTC+1"},{"seq":26,"xl":26,"section":"Origin loading and pre-carriage","family":"Shipment","status":"Actual","spec":"Completed","what":"Cargo survey completed before stuffing","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":null,"utc":1767793800.0,"pub":1767793920.0,"local":"Wed 7 Jan 14:50","tz":"UTC+1"},{"seq":27,"xl":27,"section":"Origin loading and pre-carriage","family":"Equipment","status":"Actual","spec":"Stuffed","what":"Container stuffed at origin cold store","where":"Shipper cold store, Duisburg","pos":1,"laden":false,"mode":null,"utc":1767794400.0,"pub":1767794520.0,"local":"Wed 7 Jan 15:00","tz":"UTC+1"},{"seq":28,"xl":28,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Door closed","what":"Door closed after cargo stuffing","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":null,"utc":1767794700.0,"pub":1767794820.0,"local":"Wed 7 Jan 15:05","tz":"UTC+1"},{"seq":29,"xl":29,"section":"Origin loading and pre-carriage","family":"Reefer","status":"Actual","spec":"Adjusted","what":"Reefer setpoint adjusted to +2°C","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":null,"utc":1767795600.0,"pub":1767795720.0,"local":"Wed 7 Jan 15:20","tz":"UTC+1"},{"seq":30,"xl":30,"section":"Origin loading and pre-carriage","family":"Reefer","status":"Actual","spec":"Measured","what":"Initial reefer condition measured","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":null,"utc":1767796200.0,"pub":1767796320.0,"local":"Wed 7 Jan 15:30","tz":"UTC+1"},{"seq":31,"xl":31,"section":"Origin loading and pre-carriage","family":"Equipment","status":"Actual","spec":"Picked up","what":"Laden container picked up by truck","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":"Truck","utc":1767797100.0,"pub":1767797220.0,"local":"Wed 7 Jan 15:45","tz":"UTC+1"},{"seq":32,"xl":32,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on pre-carriage","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":"Truck","utc":1767798000.0,"pub":1767798120.0,"local":"Wed 7 Jan 16:00","tz":"UTC+1"},{"seq":33,"xl":33,"section":"Origin loading and pre-carriage","family":"Transport","status":"Actual","spec":"Departed","what":"Truck departed origin cold store","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":"Truck","utc":1767798060.0,"pub":1767798180.0,"local":"Wed 7 Jan 16:01","tz":"UTC+1"},{"seq":34,"xl":34,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the shipper geofence","where":"Shipper cold store, Duisburg","pos":1,"laden":true,"mode":"Truck","utc":1767798180.0,"pub":1767798300.0,"local":"Wed 7 Jan 16:03","tz":"UTC+1"},{"seq":35,"xl":35,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update on pre-carriage to the rail ramp","where":"On the road, Duisburg","pos":1.5,"laden":true,"mode":"Truck","utc":1767799800.0,"pub":1767799920.0,"local":"Wed 7 Jan 16:30","tz":"UTC+1"},{"seq":36,"xl":36,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the Duisburg rail-ramp geofence","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Truck","utc":1767801300.0,"pub":1767801420.0,"local":"Wed 7 Jan 16:55","tz":"UTC+1"},{"seq":37,"xl":38,"section":"Origin loading and pre-carriage","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at Duisburg rail ramp","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Truck","utc":1767801420.0,"pub":1767801540.0,"local":"Wed 7 Jan 16:57","tz":"UTC+1"},{"seq":38,"xl":39,"section":"Origin loading and pre-carriage","family":"Transport","status":"Actual","spec":"Arrived","what":"Truck arrived at Duisburg rail ramp","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Truck","utc":1767801600.0,"pub":1767801720.0,"local":"Wed 7 Jan 17:00","tz":"UTC+1"},{"seq":39,"xl":37,"section":"Origin loading and pre-carriage","family":"Equipment","status":"Actual","spec":"Gated in","what":"Laden container gated in at Duisburg rail ramp","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Truck","utc":1767802200.0,"pub":1767802320.0,"local":"Wed 7 Jan 17:10","tz":"UTC+1"},{"seq":40,"xl":40,"section":"Origin loading and pre-carriage","family":"Equipment","status":"Actual","spec":"Discharged","what":"Laden container discharged from truck at rail ramp","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Truck","utc":1767802800.0,"pub":1767802920.0,"local":"Wed 7 Jan 17:20","tz":"UTC+1"},{"seq":41,"xl":41,"section":"Origin loading and pre-carriage","family":"Shipment","status":"Actual","spec":"Received","what":"Verified gross mass received","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":null,"utc":1767804000.0,"pub":1767804120.0,"local":"Wed 7 Jan 17:40","tz":"UTC+1"},{"seq":42,"xl":42,"section":"Origin rail transfer","family":"Equipment","status":"Actual","spec":"Loaded","what":"Laden container loaded onto origin rail service","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Rail","utc":1767805200.0,"pub":1767805320.0,"local":"Wed 7 Jan 18:00","tz":"UTC+1"},{"seq":43,"xl":43,"section":"Origin rail to port","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on the origin rail leg","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Rail","utc":1767808800.0,"pub":1767808920.0,"local":"Wed 7 Jan 19:00","tz":"UTC+1"},{"seq":44,"xl":44,"section":"Origin rail transfer","family":"Transport","status":"Actual","spec":"Departed","what":"Origin rail service departed Duisburg","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Rail","utc":1767808920.0,"pub":1767809040.0,"local":"Wed 7 Jan 19:02","tz":"UTC+1"},{"seq":45,"xl":45,"section":"Origin rail to port","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the Duisburg rail-ramp geofence","where":"Rail terminal, Duisburg","pos":2,"laden":true,"mode":"Rail","utc":1767809100.0,"pub":1767809220.0,"local":"Wed 7 Jan 19:05","tz":"UTC+1"},{"seq":46,"xl":46,"section":"Origin rail to port","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update on the Lower Rhine rail corridor","where":"By rail, Lower Rhine","pos":2.3,"laden":true,"mode":"Rail","utc":1767823200.0,"pub":1767823320.0,"local":"Wed 7 Jan 23:00","tz":"UTC+1"},{"seq":47,"xl":47,"section":"Origin rail to port","family":"Equipment","status":"Actual","spec":"Crossed","what":"Reefer crossed the Germany–Netherlands border by rail","where":"German–Dutch border, by rail","pos":2.55,"laden":true,"mode":"Rail","utc":1767824400.0,"pub":1767824520.0,"local":"Wed 7 Jan 23:20","tz":"UTC+1"},{"seq":48,"xl":48,"section":"Origin rail to port","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the Rotterdam terminal geofence","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Rail","utc":1767887400.0,"pub":1767887520.0,"local":"Thu 8 Jan 16:50","tz":"UTC+1"},{"seq":49,"xl":49,"section":"Origin rail to port","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at Rotterdam terminal","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Rail","utc":1767887700.0,"pub":1767887820.0,"local":"Thu 8 Jan 16:55","tz":"UTC+1"},{"seq":50,"xl":50,"section":"Origin rail transfer","family":"Transport","status":"Actual","spec":"Arrived","what":"Origin rail service arrived at Rotterdam terminal","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Rail","utc":1767888000.0,"pub":1767888120.0,"local":"Thu 8 Jan 17:00","tz":"UTC+1"},{"seq":51,"xl":51,"section":"Origin rail transfer","family":"Equipment","status":"Actual","spec":"Discharged","what":"Laden container discharged from origin rail service","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Rail","utc":1767891600.0,"pub":1767891720.0,"local":"Thu 8 Jan 18:00","tz":"UTC+1"},{"seq":52,"xl":52,"section":"Export regulatory filing","family":"Shipment","status":"Actual","spec":"Submitted","what":"US advance manifest filing submitted","where":null,"pos":3,"laden":true,"mode":null,"utc":1767895200.0,"pub":1767895320.0,"local":"Thu 8 Jan 19:00","tz":"UTC+1"},{"seq":53,"xl":53,"section":"Export regulatory filing","family":"Shipment","status":"Actual","spec":"Approved","what":"US advance manifest filing accepted by customs","where":null,"pos":3,"laden":true,"mode":null,"utc":1767897000.0,"pub":1767897120.0,"local":"Thu 8 Jan 19:30","tz":"UTC+1"},{"seq":54,"xl":54,"section":"Ocean export information and execution","family":"Transport","status":"Planned","spec":"Departed","what":"Planned vessel departure from Rotterdam","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Vessel","utc":1768010400.0,"pub":1767895800.0,"local":"Sat 10 Jan 03:00","tz":"UTC+1"},{"seq":55,"xl":55,"section":"Ocean export information and execution","family":"IoT","status":"Actual","spec":"Device status","what":"IoT device status checked before ocean departure","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":null,"utc":1768015800.0,"pub":1768015920.0,"local":"Sat 10 Jan 04:30","tz":"UTC+1"},{"seq":56,"xl":56,"section":"Ocean export information and execution","family":"Equipment","status":"Actual","spec":"Loaded","what":"Laden container loaded onto ocean vessel","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Vessel","utc":1768017600.0,"pub":1768017720.0,"local":"Sat 10 Jan 05:00","tz":"UTC+1"},{"seq":57,"xl":57,"section":"Ocean export information and execution","family":"Transport","status":"Estimated","spec":"Departed","what":"Estimated vessel departure updated to 09:00 local time","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Vessel","utc":1768032000.0,"pub":1767981600.0,"local":"Sat 10 Jan 09:00","tz":"UTC+1"},{"seq":58,"xl":58,"section":"Ocean export information and execution","family":"Transport","status":"Actual","spec":"Departed","what":"Vessel departed Rotterdam","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Vessel","utc":1768039200.0,"pub":1768039320.0,"local":"Sat 10 Jan 11:00","tz":"UTC+1"},{"seq":59,"xl":59,"section":"Ocean export information and execution","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on the first ocean leg","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Vessel","utc":1768039320.0,"pub":1768039440.0,"local":"Sat 10 Jan 11:02","tz":"UTC+1"},{"seq":60,"xl":60,"section":"Ocean export information and execution","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the Rotterdam terminal geofence","where":"Port terminal, Rotterdam","pos":3,"laden":true,"mode":"Vessel","utc":1768039800.0,"pub":1768039920.0,"local":"Sat 10 Jan 11:10","tz":"UTC+1"},{"seq":61,"xl":61,"section":"Booking and shipment documents","family":"Shipment","status":"Actual","spec":"Issued","what":"Transport document issued","where":null,"pos":3,"laden":true,"mode":null,"utc":1768046400.0,"pub":1768046520.0,"local":"Sat 10 Jan 13:00","tz":"UTC+1"},{"seq":62,"xl":62,"section":"Ocean export information and execution","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update in the North Sea","where":"At sea, North Sea","pos":3.5,"laden":true,"mode":"Vessel","utc":1768125600.0,"pub":1768125720.0,"local":"Sun 11 Jan 10:00","tz":"UTC"},{"seq":63,"xl":63,"section":"Ocean export information and execution","family":"Reefer","status":"Actual","spec":"Measured","what":"Reefer condition measured at sea","where":"At sea, North Sea","pos":3.5,"laden":true,"mode":"Vessel","utc":1768129200.0,"pub":1768129320.0,"local":"Sun 11 Jan 11:00","tz":"UTC"},{"seq":64,"xl":64,"section":"Transshipment in Algeciras","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the Algeciras terminal geofence","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768333500.0,"pub":1768333620.0,"local":"Tue 13 Jan 20:45","tz":"UTC+1"},{"seq":65,"xl":65,"section":"Transshipment in Algeciras","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at Algeciras terminal","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768333800.0,"pub":1768333920.0,"local":"Tue 13 Jan 20:50","tz":"UTC+1"},{"seq":66,"xl":66,"section":"Transshipment","family":"Transport","status":"Actual","spec":"Arrived","what":"Vessel arrived at Algeciras","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768334400.0,"pub":1768334520.0,"local":"Tue 13 Jan 21:00","tz":"UTC+1"},{"seq":67,"xl":67,"section":"Transshipment","family":"Equipment","status":"Actual","spec":"Discharged","what":"Container discharged for transshipment","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768338000.0,"pub":1768338120.0,"local":"Tue 13 Jan 22:00","tz":"UTC+1"},{"seq":68,"xl":68,"section":"Transshipment","family":"Equipment","status":"Actual","spec":"Loaded","what":"Container loaded onto connecting vessel","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768384800.0,"pub":1768384920.0,"local":"Wed 14 Jan 11:00","tz":"UTC+1"},{"seq":69,"xl":69,"section":"Transshipment","family":"Transport","status":"Actual","spec":"Departed","what":"Connecting vessel departed Algeciras","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768392000.0,"pub":1768392120.0,"local":"Wed 14 Jan 13:00","tz":"UTC+1"},{"seq":70,"xl":70,"section":"Ocean import leg","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on the transatlantic leg","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768392120.0,"pub":1768392240.0,"local":"Wed 14 Jan 13:02","tz":"UTC+1"},{"seq":71,"xl":71,"section":"Ocean import leg","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the Algeciras terminal geofence","where":"Transshipment terminal, Algeciras","pos":4,"laden":true,"mode":"Vessel","utc":1768392600.0,"pub":1768392720.0,"local":"Wed 14 Jan 13:10","tz":"UTC+1"},{"seq":72,"xl":72,"section":"Ocean import leg","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update in the Mid-Atlantic","where":"At sea, mid-Atlantic","pos":4.5,"laden":true,"mode":"Vessel","utc":1768730400.0,"pub":1768730520.0,"local":"Sun 18 Jan 10:00","tz":"UTC"},{"seq":73,"xl":73,"section":"Ocean import leg","family":"Reefer","status":"Actual","spec":"Measured","what":"Reefer condition measured in the Mid-Atlantic","where":"At sea, mid-Atlantic","pos":4.5,"laden":true,"mode":"Vessel","utc":1768734000.0,"pub":1768734120.0,"local":"Sun 18 Jan 11:00","tz":"UTC"},{"seq":74,"xl":74,"section":"Import documentation and release","family":"Shipment","status":"Actual","spec":"Issued","what":"Arrival notice issued","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769083200.0,"pub":1769083320.0,"local":"Thu 22 Jan 07:00","tz":"UTC-5"},{"seq":75,"xl":75,"section":"Import documentation and cargo release","family":"Shipment","status":"Actual","spec":"Issued","what":"Destination charges invoice issued","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769085000.0,"pub":1769085120.0,"local":"Thu 22 Jan 07:30","tz":"UTC-5"},{"seq":76,"xl":76,"section":"Import documentation and release","family":"Shipment","status":"Actual","spec":"Pending surrender for delivery","what":"Transport document pending surrender for delivery","where":null,"pos":5,"laden":true,"mode":null,"utc":1769086800.0,"pub":1769086920.0,"local":"Thu 22 Jan 08:00","tz":"UTC-5"},{"seq":77,"xl":77,"section":"Import release documentation","family":"Shipment","status":"Actual","spec":"Issued","what":"Delivery instructions issued","where":null,"pos":5,"laden":true,"mode":null,"utc":1769090400.0,"pub":1769090520.0,"local":"Thu 22 Jan 09:00","tz":"UTC-5"},{"seq":78,"xl":78,"section":"Import documentation and release","family":"Shipment","status":"Actual","spec":"Surrendered for delivery","what":"Transport document surrendered for delivery","where":null,"pos":5,"laden":true,"mode":null,"utc":1769094000.0,"pub":1769094120.0,"local":"Thu 22 Jan 10:00","tz":"UTC-5"},{"seq":79,"xl":79,"section":"Import documentation and release","family":"Shipment","status":"Actual","spec":"Completed","what":"Booking completed","where":null,"pos":5,"laden":true,"mode":null,"utc":1769094300.0,"pub":1769094420.0,"local":"Thu 22 Jan 10:05","tz":"UTC-5"},{"seq":80,"xl":80,"section":"US port and customs","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the New York terminal geofence","where":"Port terminal, New York","pos":5,"laden":true,"mode":"Vessel","utc":1769190000.0,"pub":1769190120.0,"local":"Fri 23 Jan 12:40","tz":"UTC-5"},{"seq":81,"xl":81,"section":"US port and customs","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at the New York terminal","where":"Port terminal, New York","pos":5,"laden":true,"mode":"Vessel","utc":1769190300.0,"pub":1769190420.0,"local":"Fri 23 Jan 12:45","tz":"UTC-5"},{"seq":82,"xl":82,"section":"US port and customs","family":"Transport","status":"Actual","spec":"Arrived","what":"Vessel arrived at New York","where":"Port terminal, New York","pos":5,"laden":true,"mode":"Vessel","utc":1769191200.0,"pub":1769191320.0,"local":"Fri 23 Jan 13:00","tz":"UTC-5"},{"seq":83,"xl":83,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Discharged","what":"Container discharged in New York","where":"Port terminal, New York","pos":5,"laden":true,"mode":"Vessel","utc":1769198400.0,"pub":1769198520.0,"local":"Fri 23 Jan 15:00","tz":"UTC-5"},{"seq":84,"xl":84,"section":"US port and customs","family":"IoT","status":"Actual","spec":"Device status","what":"IoT device status update after discharge in New York","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769198700.0,"pub":1769198820.0,"local":"Fri 23 Jan 15:05","tz":"UTC-5"},{"seq":85,"xl":85,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Customs selected for scan","what":"Container selected for customs scan","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769200200.0,"pub":1769200320.0,"local":"Fri 23 Jan 15:30","tz":"UTC-5"},{"seq":86,"xl":86,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Customs selected for inspection","what":"Container selected for customs inspection","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769202000.0,"pub":1769202120.0,"local":"Fri 23 Jan 16:00","tz":"UTC-5"},{"seq":87,"xl":87,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Inspected","what":"Original seal inspected before customs opening","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769461500.0,"pub":1769461620.0,"local":"Mon 26 Jan 16:05","tz":"UTC-5"},{"seq":88,"xl":88,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Removed","what":"Original seal removed for inspection","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769461800.0,"pub":1769461920.0,"local":"Mon 26 Jan 16:10","tz":"UTC-5"},{"seq":89,"xl":89,"section":"US port and customs","family":"IoT","status":"Actual","spec":"Door opened","what":"Door opened during customs inspection","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769461920.0,"pub":1769462040.0,"local":"Mon 26 Jan 16:12","tz":"UTC-5"},{"seq":90,"xl":90,"section":"US port and customs","family":"IoT","status":"Actual","spec":"Door closed","what":"Door closed after customs inspection","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769466000.0,"pub":1769466120.0,"local":"Mon 26 Jan 17:20","tz":"UTC-5"},{"seq":91,"xl":91,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Resealed","what":"Container resealed after inspection","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769466300.0,"pub":1769466420.0,"local":"Mon 26 Jan 17:25","tz":"UTC-5"},{"seq":92,"xl":92,"section":"US port and customs","family":"Shipment","status":"Actual","spec":"Released","what":"Customs clearance released","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769493000.0,"pub":1769493120.0,"local":"Tue 27 Jan 00:50","tz":"UTC-5"},{"seq":93,"xl":93,"section":"US port and customs","family":"Equipment","status":"Actual","spec":"Customs released","what":"Container released by customs","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769493600.0,"pub":1769493720.0,"local":"Tue 27 Jan 01:00","tz":"UTC-5"},{"seq":94,"xl":94,"section":"Import documentation and release","family":"Shipment","status":"Actual","spec":"Issued","what":"Delivery order issued","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769494200.0,"pub":1769494320.0,"local":"Tue 27 Jan 01:10","tz":"UTC-5"},{"seq":95,"xl":95,"section":"Import documentation and release","family":"Shipment","status":"Actual","spec":"Issued","what":"Container release order issued","where":"Port terminal, New York","pos":5,"laden":true,"mode":null,"utc":1769494500.0,"pub":1769494620.0,"local":"Tue 27 Jan 01:15","tz":"UTC-5"},{"seq":96,"xl":96,"section":"US import release and inland transport","family":"Shipment","status":"Actual","spec":"Issued","what":"US inland transport order issued","where":null,"pos":5,"laden":true,"mode":null,"utc":1769495400.0,"pub":1769495520.0,"local":"Tue 27 Jan 01:30","tz":"UTC-5"},{"seq":97,"xl":97,"section":"US inland rail","family":"Equipment","status":"Actual","spec":"Loaded","what":"Container loaded onto rail","where":"Port rail ramp, New York","pos":5,"laden":true,"mode":"Rail","utc":1769554800.0,"pub":1769554920.0,"local":"Tue 27 Jan 18:00","tz":"UTC-5"},{"seq":98,"xl":98,"section":"US inland rail","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on the US inland rail leg","where":"Port rail ramp, New York","pos":5,"laden":true,"mode":"Rail","utc":1769556600.0,"pub":1769556720.0,"local":"Tue 27 Jan 18:30","tz":"UTC-5"},{"seq":99,"xl":99,"section":"US inland rail","family":"Transport","status":"Actual","spec":"Departed","what":"Rail service departed New York","where":"Port rail ramp, New York","pos":5,"laden":true,"mode":"Rail","utc":1769556720.0,"pub":1769556840.0,"local":"Tue 27 Jan 18:32","tz":"UTC-5"},{"seq":100,"xl":100,"section":"US inland rail","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the New York port rail-ramp geofence","where":"Port rail ramp, New York","pos":5,"laden":true,"mode":"Rail","utc":1769557200.0,"pub":1769557320.0,"local":"Tue 27 Jan 18:40","tz":"UTC-5"},{"seq":101,"xl":101,"section":"US inland rail","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update on the US inland rail leg","where":"By rail, Pennsylvania","pos":5.5,"laden":true,"mode":"Rail","utc":1769608800.0,"pub":1769608920.0,"local":"Wed 28 Jan 09:00","tz":"UTC-5"},{"seq":102,"xl":102,"section":"US inland rail","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the Chicago rail-ramp geofence","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Rail","utc":1769762700.0,"pub":1769762820.0,"local":"Fri 30 Jan 02:45","tz":"UTC-6"},{"seq":103,"xl":103,"section":"US inland rail","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at the Chicago rail ramp","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Rail","utc":1769763000.0,"pub":1769763120.0,"local":"Fri 30 Jan 02:50","tz":"UTC-6"},{"seq":104,"xl":104,"section":"US inland rail","family":"Transport","status":"Actual","spec":"Arrived","what":"Rail service arrived in Chicago","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Rail","utc":1769763600.0,"pub":1769763720.0,"local":"Fri 30 Jan 03:00","tz":"UTC-6"},{"seq":105,"xl":105,"section":"US inland rail","family":"Equipment","status":"Actual","spec":"Discharged","what":"Container discharged from rail","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Rail","utc":1769767200.0,"pub":1769767320.0,"local":"Fri 30 Jan 04:00","tz":"UTC-6"},{"seq":106,"xl":106,"section":"Final delivery","family":"Equipment","status":"Actual","spec":"Loaded","what":"Laden container loaded onto final-delivery truck","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Truck","utc":1769777100.0,"pub":1769777220.0,"local":"Fri 30 Jan 06:45","tz":"UTC-6"},{"seq":107,"xl":107,"section":"Final delivery","family":"Equipment","status":"Actual","spec":"Gated out","what":"Laden container gated out by truck","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Truck","utc":1769778000.0,"pub":1769778120.0,"local":"Fri 30 Jan 07:00","tz":"UTC-6"},{"seq":108,"xl":108,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on final delivery","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Truck","utc":1769778300.0,"pub":1769778420.0,"local":"Fri 30 Jan 07:05","tz":"UTC-6"},{"seq":109,"xl":109,"section":"Final delivery","family":"Transport","status":"Actual","spec":"Departed","what":"Truck departed Chicago rail ramp","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Truck","utc":1769778900.0,"pub":1769779020.0,"local":"Fri 30 Jan 07:15","tz":"UTC-6"},{"seq":110,"xl":110,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the Chicago rail-ramp geofence","where":"Rail ramp, Chicago","pos":6,"laden":true,"mode":"Truck","utc":1769778960.0,"pub":1769779080.0,"local":"Fri 30 Jan 07:16","tz":"UTC-6"},{"seq":111,"xl":111,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update during final delivery","where":"On the road, Chicago","pos":6.5,"laden":true,"mode":"Truck","utc":1769783400.0,"pub":1769783520.0,"local":"Fri 30 Jan 08:30","tz":"UTC-6"},{"seq":112,"xl":112,"section":"Final delivery","family":"Equipment","status":"Actual","spec":"Available for drop off","what":"Laden reefer available for drop-off at the destination cold store","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":"Truck","utc":1769788500.0,"pub":1769788620.0,"local":"Fri 30 Jan 09:55","tz":"UTC-6"},{"seq":113,"xl":113,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the consignee geofence","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":"Truck","utc":1769789100.0,"pub":1769789220.0,"local":"Fri 30 Jan 10:05","tz":"UTC-6"},{"seq":114,"xl":114,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at the consignee","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":"Truck","utc":1769789400.0,"pub":1769789520.0,"local":"Fri 30 Jan 10:10","tz":"UTC-6"},{"seq":115,"xl":115,"section":"Final delivery","family":"Transport","status":"Actual","spec":"Arrived","what":"Truck arrived at destination cold store","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":"Truck","utc":1769789700.0,"pub":1769789820.0,"local":"Fri 30 Jan 10:15","tz":"UTC-6"},{"seq":116,"xl":116,"section":"Final delivery","family":"Equipment","status":"Actual","spec":"Dropped off","what":"Laden container dropped off at destination","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":"Truck","utc":1769790000.0,"pub":1769790120.0,"local":"Fri 30 Jan 10:20","tz":"UTC-6"},{"seq":117,"xl":117,"section":"Final delivery","family":"Shipment","status":"Actual","spec":"Received","what":"Proof of delivery received","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":"Truck","utc":1769790600.0,"pub":1769790720.0,"local":"Fri 30 Jan 10:30","tz":"UTC-6"},{"seq":118,"xl":118,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Door opened","what":"Door opened for stripping at destination","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":null,"utc":1769791500.0,"pub":1769791620.0,"local":"Fri 30 Jan 10:45","tz":"UTC-6"},{"seq":119,"xl":119,"section":"Final delivery","family":"Equipment","status":"Actual","spec":"Stripped","what":"Container stripped at destination","where":"Consignee DC, Chicago area","pos":7,"laden":true,"mode":null,"utc":1769793300.0,"pub":1769793420.0,"local":"Fri 30 Jan 11:15","tz":"UTC-6"},{"seq":120,"xl":120,"section":"Final delivery","family":"IoT","status":"Actual","spec":"Door closed","what":"Door closed after stripping at destination","where":"Consignee DC, Chicago area","pos":7,"laden":false,"mode":null,"utc":1769793600.0,"pub":1769793720.0,"local":"Fri 30 Jan 11:20","tz":"UTC-6"},{"seq":121,"xl":121,"section":"Final delivery","family":"Reefer","status":"Actual","spec":"Measured","what":"Reefer power-off status measured","where":"Consignee DC, Chicago area","pos":7,"laden":false,"mode":null,"utc":1769793900.0,"pub":1769794020.0,"local":"Fri 30 Jan 11:25","tz":"UTC-6"},{"seq":122,"xl":122,"section":"Empty return","family":"Equipment","status":"Actual","spec":"Picked up","what":"Empty container picked up for return","where":"Consignee DC, Chicago area","pos":7,"laden":false,"mode":"Truck","utc":1769796900.0,"pub":1769797020.0,"local":"Fri 30 Jan 12:15","tz":"UTC-6"},{"seq":123,"xl":123,"section":"Empty return","family":"IoT","status":"Actual","spec":"Motion start","what":"IoT device detected motion start on empty return","where":"Consignee DC, Chicago area","pos":7,"laden":false,"mode":"Truck","utc":1769797200.0,"pub":1769797320.0,"local":"Fri 30 Jan 12:20","tz":"UTC-6"},{"seq":124,"xl":124,"section":"Empty return","family":"Transport","status":"Actual","spec":"Departed","what":"Truck departed customer with empty container","where":"Consignee DC, Chicago area","pos":7,"laden":false,"mode":"Truck","utc":1769797260.0,"pub":1769797380.0,"local":"Fri 30 Jan 12:21","tz":"UTC-6"},{"seq":125,"xl":125,"section":"Empty return","family":"IoT","status":"Actual","spec":"Geofence exit","what":"IoT device detected exit from the consignee geofence","where":"Consignee DC, Chicago area","pos":7,"laden":false,"mode":"Truck","utc":1769797500.0,"pub":1769797620.0,"local":"Fri 30 Jan 12:25","tz":"UTC-6"},{"seq":126,"xl":126,"section":"Empty return","family":"IoT","status":"Actual","spec":"Breadcrumb","what":"IoT location update during empty return","where":"On the road, Chicago","pos":7.5,"laden":false,"mode":"Truck","utc":1769800200.0,"pub":1769800320.0,"local":"Fri 30 Jan 13:10","tz":"UTC-6"},{"seq":127,"xl":127,"section":"Empty return","family":"IoT","status":"Actual","spec":"Geofence entry","what":"IoT device detected entry into the empty-container depot geofence","where":"Empty depot, Chicago","pos":8,"laden":false,"mode":"Truck","utc":1769802900.0,"pub":1769803020.0,"local":"Fri 30 Jan 13:55","tz":"UTC-6"},{"seq":128,"xl":128,"section":"Empty return","family":"IoT","status":"Actual","spec":"Motion stop","what":"IoT device detected motion stop at the empty-container depot","where":"Empty depot, Chicago","pos":8,"laden":false,"mode":"Truck","utc":1769803020.0,"pub":1769803140.0,"local":"Fri 30 Jan 13:57","tz":"UTC-6"},{"seq":129,"xl":129,"section":"Empty return","family":"Transport","status":"Actual","spec":"Arrived","what":"Truck arrived at empty-container depot","where":"Empty depot, Chicago","pos":8,"laden":false,"mode":"Truck","utc":1769803200.0,"pub":1769803320.0,"local":"Fri 30 Jan 14:00","tz":"UTC-6"},{"seq":130,"xl":130,"section":"Empty return","family":"Equipment","status":"Actual","spec":"Gated in","what":"Empty container gated in at depot","where":"Empty depot, Chicago","pos":8,"laden":false,"mode":"Truck","utc":1769803800.0,"pub":1769803920.0,"local":"Fri 30 Jan 14:10","tz":"UTC-6"},{"seq":131,"xl":131,"section":"Empty return","family":"IoT","status":"Actual","spec":"Device status","what":"IoT device set inactive after the empty return","where":"Empty depot, Chicago","pos":8,"laden":false,"mode":null,"utc":1769804280.0,"pub":1769804400.0,"local":"Fri 30 Jan 14:18","tz":"UTC-6"},{"seq":132,"xl":132,"section":"Empty return","family":"IoT","status":"Actual","spec":"Unpairing","what":"IoT device unpaired from the returned equipment","where":"Empty depot, Chicago","pos":8,"laden":false,"mode":null,"utc":1769804400.0,"pub":1769804520.0,"local":"Fri 30 Jan 14:20","tz":"UTC-6"}];
+// Ten key moments, keyed by storyline row (xl): who typically sends the event, who passes it on, who needs it and what they can do with it.
+const MOMENTS = [
+  { seq: 11, title: 'Empty reefer ready at the depot', from: 'Empty depot', via: 'Carrier', to: 'Trucker, shipper', act: 'Send the truck when the box is ready, so no trip is wasted.' },
+  { seq: 29, title: 'Cooling set to +2°C', from: 'Reefer unit', via: 'Carrier', to: 'Shipper, consignee', act: 'Check the setting matches the booking before the box leaves.' },
+  { seq: 48, title: 'Tracking device enters the Rotterdam terminal', from: 'IoT provider', via: null, to: 'Shipper, carrier', act: 'See the box reach the port without waiting for the rail operator to report it.' },
+  { seq: 57, title: 'Ship departure slips to 09:00', from: 'Carrier', via: 'Visibility platform', to: 'Shipper, consignee', act: 'Move downstream bookings back six hours while there is still time.' },
+  { seq: 61, title: 'Transport document issued', from: 'Carrier', via: null, to: 'Shipper, consignee', act: 'Pass the document on so the consignee can pay and take delivery.' },
+  { seq: 73, title: 'Cargo temperature checked mid-Atlantic', from: 'Reefer unit', via: 'Carrier', to: 'Shipper, consignee', act: 'Confirm the cargo is fine at sea without phoning anyone.' },
+  { seq: 86, title: 'Customs picks the box for inspection', from: 'Terminal', via: 'Carrier', to: 'Consignee, broker, rail operator', act: 'Push the rail booking back, because the exam will not happen before Monday.' },
+  { seq: 95, title: 'Container released for collection', from: 'Carrier', via: null, to: 'Rail operator, consignee', act: 'Put the box on the next train to Chicago.' },
+  { seq: 112, title: 'Dock ready for the laden reefer', from: 'Consignee DC', via: 'Visibility platform', to: 'Trucker', act: 'Drive straight to the dock door instead of queueing at the gate.' },
+  { seq: 130, title: 'Empty back at the depot', from: 'Empty depot', via: 'Carrier', to: 'Consignee, trucker', act: 'Close the trip and stop the detention clock.' },
+];
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const FAMS = ['Shipment', 'Transport', 'Equipment', 'IoT', 'Reefer'];
+  const FCOL = { Shipment: 'var(--f-shp)', Transport: 'var(--f-trn)', Equipment: 'var(--f-eqp)', IoT: 'var(--f-iot)', Reefer: 'var(--f-rfr)' };
+  const FSUB = { Shipment: 'paperwork', Transport: 'ship, train, truck', Equipment: 'the container', IoT: 'tracking device', Reefer: 'cooling unit' };
+  const fb = (f) => `<span class="fb" style="--fc:${FCOL[f]}">${f}</span>`;
+  // when the event was published compared with when it happened (or is planned or expected to happen)
+  const lag = (e) => {
+    const m = Math.round((e.pub - e.utc) / 60), a = Math.abs(m);
+    const v = a < 90 ? `${a} min` : a < 2880 ? `${Math.round(a / 60)} h` : `${Math.round(a / 1440)} days`;
+    return m >= 0 ? `published ${v} later` : `published ${v} ahead`;
+  };
+  // the empty/laden flag describes the container the event acts on; after stuffing it is laden, after stripping it is empty
+  const ladenAfter = (e) => (e.spec === 'Stripped' ? false : e.spec === 'Stuffed' ? true : e.laden);
+
+  // route: stops and legs
+  const STOPS = [
+    { name: 'Empty depot', sub: 'Duisburg' }, { name: 'Shipper', sub: 'Duisburg' }, { name: 'Rail terminal', sub: 'Duisburg' },
+    { name: 'Port', sub: 'Rotterdam' }, { name: 'Transshipment', sub: 'Algeciras' }, { name: 'Port', sub: 'New York' },
+    { name: 'Rail ramp', sub: 'Chicago' }, { name: 'Consignee DC', sub: 'Chicago area' }, { name: 'Empty depot', sub: 'Chicago' },
+  ];
+  const X = [60, 175, 290, 420, 620, 820, 945, 1050, 1150];
+  const LEGS = ['Truck', 'Truck', 'Rail', 'Vessel', 'Vessel', 'Rail', 'Truck', 'Truck'];
+  const xAt = (pos) => { const i = Math.floor(pos), f = pos - i; return i >= X.length - 1 ? X[X.length - 1] : X[i] + (X[i + 1] - X[i]) * f; };
+  const NS = 'http://www.w3.org/2000/svg';
+  const S_ = (tag, a, p) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); p.appendChild(n); return n; };
+  const svg = $('route'); const Y = 62;
+  const legEls = LEGS.map((m, i) => { const l = S_('line', { x1: X[i], x2: X[i + 1], y1: Y, y2: Y, class: 'leg ' + m }, svg); const t = S_('text', { x: (X[i] + X[i + 1]) / 2, y: Y - 14, class: 'mode' }, svg); t.textContent = m === 'Vessel' ? 'Sea' : m; return l; });
+  { S_('line', { x1: xAt(2.55), x2: xAt(2.55), y1: Y - 10, y2: Y + 10, stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': '2 2' }, svg); }
+  const stopEls = STOPS.map((s, i) => {
+    const g = S_('g', { class: 'stop', tabindex: 0, role: 'button', 'aria-label': `Jump to ${s.name}, ${s.sub}` }, svg);
+    S_('circle', { cx: X[i], cy: Y, r: 7 }, g);
+    const a = S_('text', { x: X[i], y: Y + 28 }, g); a.textContent = s.name;
+    const b = S_('text', { x: X[i], y: Y + 43, class: 'sub' }, g); b.textContent = s.sub;
+    const jump = () => { const n = STORY.findIndex((e) => e.pos === i); if (n >= 0) { stop(); go(n + 1); } };
+    g.addEventListener('click', jump); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); jump(); } });
+    return g;
+  });
+  const box = S_('g', { id: 'box', class: 'none' }, svg);
+  S_('rect', { x: -13, y: -32, width: 26, height: 16, rx: 2, class: 'b' }, box);
+  const boxT = S_('text', { x: 0, y: -38 }, box);
+
+  // buckets
+  const B = {};
+  for (const f of FAMS) {
+    const el = document.createElement('div'); el.className = 'bucket'; el.dataset.family = f; el.style.setProperty('--fc', FCOL[f]);
+    el.innerHTML = `<div class="bh"><span class="t">${f}</span><span class="s">${FSUB[f]}</span><span class="n">0</span></div><div class="pile" role="group" aria-label="${f} events"></div><div class="ev"></div>`;
+    $('buckets').appendChild(el);
+    const pile = el.querySelector('.pile');
+    // up and down arrows move between bricks in a bucket
+    pile.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+      ev.preventDefault(); ev.stopPropagation();
+      const t = ev.key === 'ArrowUp' ? document.activeElement.nextElementSibling : document.activeElement.previousElementSibling;
+      if (t) t.focus();
+    });
+    B[f] = { el, n: el.querySelector('.n'), ev: el.querySelector('.ev'), pile };
+  }
+
+  // key moments
+  const MK = MOMENTS.map((m) => { const i = STORY.findIndex((e) => (e.xl ?? e.seq) === m.seq); return { ...m, k: i + 1, e: STORY[i] }; });
+  const chips = MK.map((m, i) => {
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = i + 1;
+    c.style.setProperty('--cc', FCOL[m.e.family]); c.dataset.moment = i + 1; c.title = m.title; c.setAttribute('aria-label', `Moment ${i + 1}: ${m.title}`);
+    c.onclick = () => runTo(m.k);
+    $('chips').appendChild(c); return c;
+  });
+
+  let k = 0, mode = 'guided', timer = null, playing = false, lastFocus = null;
+  const sc = $('scrub'); sc.max = STORY.length;
+
+  function story() {
+    const el = $('story');
+    let i = -1; MK.forEach((m, j) => { if (m.k <= k) i = j; });
+    const m = MK[i], at = !!m && m.k === k, next = MK[i + 1];
+    chips.forEach((c, j) => { c.classList.toggle('done', j <= i); c.classList.toggle('cur', !!at && j === i); });
+    if (!m) {
+      el.style.removeProperty('--fc'); el.classList.remove('past', 'point');
+      $('s-lab').textContent = 'Ten key moments';
+      $('s-title').textContent = 'One reefer container, Duisburg to Chicago and back';
+      $('s-act').innerHTML = 'Every event lands in one of five buckets. Ten of them show why sharing matters: who sent it, who passed it on, who needs it and what they can do with it.';
+      $('s-meta').textContent = mode === 'guided' ? 'Press ▶| for the first moment, or ▶ to play.' : `Press ▶ to play all ${STORY.length} events.`;
+      $('s-relay').innerHTML = '';
+      return;
+    }
+    el.style.setProperty('--fc', FCOL[m.e.family]);
+    el.classList.toggle('past', !at);
+    $('s-lab').innerHTML = `${at ? 'Moment' : 'Last moment'} ${i + 1} of ${MK.length} ${fb(m.e.family)} <span class="st ${m.e.status}">${m.e.status}</span>`;
+    $('s-title').textContent = m.title;
+    $('s-act').innerHTML = `<b>What they can do:</b> ${esc(m.act)}`;
+    $('s-meta').textContent = at ? `#${m.e.seq} · ${m.e.local} ${m.e.tz} · ${lag(m.e)}` : next ? `Next: moment ${i + 2}, ${next.title}` : 'End of the journey';
+    $('s-relay').innerHTML = `<div class="p"><div class="k">Sent by</div><div class="v">${esc(m.from)}</div></div><div class="arr" aria-hidden="true">→</div>
+      <div class="p${m.via ? '' : ' none'}"><div class="k">Forwarded by</div><div class="v">${m.via ? esc(m.via) : 'Nobody, sent direct'}</div></div><div class="arr" aria-hidden="true">→</div>
+      <div class="p"><div class="k">Who needs it</div><div class="v">${esc(m.to)}</div></div>`;
+    // notch above the bucket that just received this event
+    el.classList.toggle('point', at);
+    if (at) { const r = B[m.e.family].el.getBoundingClientRect(), c = el.getBoundingClientRect(); el.style.setProperty('--nx', `${r.left + r.width / 2 - c.left}px`); }
+  }
+
+  function go(n, animate) {
+    n = Math.max(0, Math.min(STORY.length, n));
+    const prev = k; k = n;
+    const hadFocus = document.activeElement && document.activeElement.classList.contains('brick');
+    for (const f of FAMS) {
+      const pile = B[f].pile;
+      const want = STORY.slice(0, k).filter((e) => e.family === f);
+      while (pile.children.length > want.length) pile.lastChild.remove();
+      for (let i = pile.children.length; i < want.length; i++) {
+        const e = want[i];
+        const b = document.createElement('button'); b.type = 'button'; b.dataset.seq = e.seq;
+        b.className = 'brick ' + e.status + (animate && n === prev + 1 ? ' drop' : '');
+        b.title = `#${e.seq} ${e.what} (${e.status.toLowerCase()})`;
+        b.setAttribute('aria-label', `Event ${e.seq}, ${e.status.toLowerCase()}: ${e.what}`);
+        b.addEventListener('click', () => card(e, b));
+        pile.appendChild(b);
+      }
+      // one tab stop per bucket: its newest brick
+      [...pile.children].forEach((b, i, all) => { b.tabIndex = i === all.length - 1 ? 0 : -1; });
+      B[f].n.textContent = want.length;
+      const l = want[want.length - 1];
+      const far = l && Math.abs(l.pub - l.utc) > 1800;
+      B[f].ev.innerHTML = l ? `<div class="h">#${l.seq} · ${esc(l.local)} ${esc(l.tz)}</div><div class="w">${esc(l.what)}</div><div class="m"><span class="st ${l.status}">${l.status}</span><span>${esc(l.where || 'Paperwork, no location')}</span></div>${far ? `<div class="pub">${lag(l)}</div>` : ''}` : '<div class="empty">No events yet</div>';
+      B[f].el.classList.remove('on');
+    }
+    document.body.classList.toggle('started', k > 0);
+    document.querySelectorAll('.brick.latest').forEach((b) => b.classList.remove('latest'));
+    const e = STORY[k - 1];
+    if (e) { const pile = B[e.family].pile; if (pile.lastChild) pile.lastChild.classList.add('latest'); }
+    if (hadFocus && !document.activeElement.classList.contains('brick') && e) B[e.family].pile.lastChild.focus();
+    // container on the route
+    let pos = null, laden = null;
+    for (let i = 0; i < k; i++) { if (STORY[i].pos !== null) pos = STORY[i].pos; const l = ladenAfter(STORY[i]); if (l !== null) laden = l; }
+    box.setAttribute('class', pos === null ? 'none' : laden ? '' : 'empty');
+    box.setAttribute('transform', `translate(${xAt(pos === null ? 0 : pos)},${Y})`);
+    boxT.textContent = pos === null ? 'no container yet' : laden ? 'laden' : 'empty';
+    legEls.forEach((l, i) => l.classList.toggle('done', pos !== null && pos >= i + 1));
+    stopEls.forEach((g, i) => g.classList.toggle('here', pos === i));
+    // on narrow screens the route scrolls; keep the container in view
+    const wrap = svg.parentElement;
+    if (wrap.scrollWidth > wrap.clientWidth) wrap.scrollTo({ left: xAt(pos === null ? 0 : pos) * (svg.clientWidth / 1210) - wrap.clientWidth / 2, behavior: animate ? 'smooth' : 'auto' });
+    if (e) B[e.family].el.classList.add('on');
+    $('stage').textContent = e ? e.section : 'Before the journey';
+    $('when').textContent = e ? `#${e.seq} · ${e.local} ${e.tz}` : '';
+    sc.value = k; $('count').textContent = `${k} / ${STORY.length}`; $('date').textContent = e ? e.local.split(' ').slice(0, 3).join(' ') : '';
+    $('buckets').setAttribute('aria-label', e ? `Event ${e.seq}: ${e.family}, ${e.what}` : 'Event buckets');
+    story();
+  }
+
+  function card(e, from) {
+    lastFocus = from || null;
+    const m = MK.find((x) => x.e === e);
+    $('dlg-body').innerHTML = `<div>${fb(e.family)} <span class="st ${e.status}">${e.status}</span></div><h3>${esc(e.what)}</h3>
+      <div class="kv"><div class="k">Event</div><div>#${e.seq} of ${STORY.length}</div>
+      <div class="k">Type</div><div>${e.family}: ${esc(e.spec)}</div>
+      <div class="k">${e.status === 'Actual' ? 'Happened' : e.status === 'Planned' ? 'Planned for' : 'Expected'}</div><div>${esc(e.local)} ${esc(e.tz)}</div>
+      <div class="k">Published</div><div>${lag(e).replace('published ', '')}</div>
+      <div class="k">Where</div><div>${esc(e.where || 'No location: paperwork')}</div>
+      ${e.mode ? `<div class="k">Moving by</div><div>${esc(e.mode)}</div>` : ''}
+      <div class="k">Stage</div><div>${esc(e.section)}</div>
+      ${m ? `<div class="sep"></div><div class="k">Sent by</div><div>${esc(m.from)}</div><div class="k">Forwarded by</div><div>${esc(m.via || 'Nobody, sent direct')}</div><div class="k">Who needs it</div><div>${esc(m.to)}</div><div class="k">What they can do</div><div>${esc(m.act)}</div>` : ''}</div>
+      <p style="margin:14px 0 0"><button class="btn" id="dlg-close" type="button">Close</button></p>`;
+    $('dlg').hidden = false; $('dlg-close').onclick = closeCard; $('dlg-close').focus();
+  }
+  function closeCard() { $('dlg').hidden = true; if (lastFocus && lastFocus.isConnected) lastFocus.focus(); lastFocus = null; }
+  $('dlg').addEventListener('click', (ev) => { if (ev.target.id === 'dlg') closeCard(); });
+
+  // playback: in key moments mode play holds on each moment
+  const HOLD = 5000;
+  function stop() { clearTimeout(timer); timer = null; setPlaying(false); }
+  function setPlaying(v) { playing = v; $('b-play').innerHTML = v ? '&#x23F8;' : '&#x25B6;'; $('b-play').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+  function play() {
+    clearTimeout(timer); setPlaying(true);
+    if (k >= STORY.length) go(0);
+    const tick = () => {
+      if (k >= STORY.length) return stop();
+      go(k + 1, true);
+      const hold = mode === 'guided' && MK.some((m) => m.k === k);
+      timer = setTimeout(tick, hold ? HOLD : 1000 / +$('speed').value);
+    };
+    tick();
+  }
+  // fast fill up to a target, so the buckets visibly fill on the way to a moment
+  function runTo(target) {
+    clearTimeout(timer); setPlaying(false);
+    if (target <= k) return go(target);
+    const step = Math.max(12, Math.min(60, 1100 / (target - k)));
+    const tick = () => { go(k + 1, true); if (k < target) timer = setTimeout(tick, step); else timer = null; };
+    tick();
+  }
+  const next = () => { if (mode === 'all') { stop(); go(k + 1, true); return; } const m = MK.find((x) => x.k > k); runTo(m ? m.k : STORY.length); };
+  const back = () => { stop(); if (mode === 'all') return go(k - 1); const m = [...MK].reverse().find((x) => x.k < k); go(m ? m.k : 0); };
+  function setMode(v) {
+    mode = v; $('m-guided').setAttribute('aria-pressed', v === 'guided'); $('m-all').setAttribute('aria-pressed', v === 'all');
+    $('b-next').title = v === 'guided' ? 'Next moment (right arrow)' : 'Next event (right arrow)';
+    $('b-prev').title = v === 'guided' ? 'Previous moment (left arrow)' : 'Previous event (left arrow)';
+    if (playing) play(); story();
+  }
+  $('m-guided').onclick = () => setMode('guided');
+  $('m-all').onclick = () => setMode('all');
+  $('b-play').onclick = () => (playing ? stop() : play());
+  $('b-next').onclick = next;
+  $('b-prev').onclick = back;
+  $('b-start').onclick = () => { stop(); go(0); };
+  $('speed').onchange = () => { if (playing) play(); };
+  sc.oninput = () => { stop(); go(+sc.value); };
+  window.addEventListener('resize', story);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('dlg').hidden) return closeCard();
+    if (!$('dlg').hidden) return;
+    const t = document.activeElement.tagName;
+    if (/INPUT|SELECT/.test(t)) return;
+    if (t === 'BUTTON' && (ev.key === ' ' || ev.key === 'Enter')) return;
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); next(); }
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); back(); }
+    if (ev.key === ' ') { ev.preventDefault(); playing ? stop() : play(); }
+  });
+  go(0);
+  // test and recording hooks: read state, open or close an event card, data. Nothing here changes what the user sees.
+  const state = () => {
+    const e = STORY[k - 1] || null; let mi = -1; MK.forEach((m, j) => { if (m.k <= k) mi = j; });
+    const counts = Object.fromEntries(FAMS.map((f) => [f, STORY.slice(0, k).filter((x) => x.family === f).length]));
+    return { k, total: STORY.length, mode, playing, busy: timer !== null, event: e, moment: mi + 1, atMoment: mi >= 0 && MK[mi].k === k, counts, cardOpen: !$('dlg').hidden };
+  };
+  const openCard = (seq) => { const e = STORY.find((x) => x.seq === seq); if (e) card(e, document.querySelector(`.brick[data-seq="${seq}"]`)); };
+  window.__tnt = { go, play, stop, runTo, setMode, next, back, state, card: openCard, closeCard, story: STORY, moments: MK, families: FAMS };
+})();
+</script>
+</body>
+</html>

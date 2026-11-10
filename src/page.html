@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One Container, Five Buckets of Events</title>
+<meta name="author" content="Emilio Solanes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #E4EAEA; --panel: #F5F8F8; --panel-2: #E9EFEF; --ink: #12232A; --muted: #586B72; --line: #C9D4D6; --accent: #D9531E;
+  --f-shp: #8A4FA8; --f-trn: #3A55B4; --f-eqp: #D2601A; --f-iot: #2E8B57; --f-rfr: #1696B8;
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif; --font-body: 'Instrument Sans', system-ui, sans-serif; --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0B1317; --panel: #111C22; --panel-2: #172530; --ink: #DEE8EB; --muted: #8DA1A9; --line: #233540; --accent: #FF7A48;
+    --f-shp: #C08CE0; --f-trn: #8EA2F0; --f-eqp: #FF8A4C; --f-iot: #5CCB8C; --f-rfr: #55C8EA; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-body); padding: 16px; }
+main { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+main > * { min-width: 0; }
+header.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.eyebrow { font: 600 12px var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 700 30px/1 var(--font-display); text-transform: uppercase; margin: 4px 0 0; letter-spacing: .01em; }
+.controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.btn { font: 600 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; height: 38px; min-width: 38px; padding: 0 10px; cursor: pointer; }
+.btn.play { background: var(--ink); color: var(--panel); border-color: var(--ink); border-radius: 50%; width: 46px; height: 46px; }
+.btn:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { font: 500 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; position: relative; }
+.fb { display: inline-block; font: 700 10.5px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--fc); padding: 4px 7px; border-radius: 4px; }
+.st { font: 600 11px/1 var(--font-body); padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.st::before, .stg::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; margin-right: 5px; vertical-align: -1px; box-sizing: border-box; }
+.st.Estimated::before, .stg.Estimated::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.st.Actual::before, .stg.Actual::before { background: currentColor; }
+
+/* route */
+#route { width: 100%; height: auto; display: block; }
+#route .leg { stroke: var(--line); stroke-width: 4; stroke-linecap: round; }
+#route .leg.Vessel { stroke-dasharray: 2 7; }
+#route .leg.done { stroke: var(--ink); }
+#route .stop circle { fill: var(--panel); stroke: var(--ink); stroke-width: 2; }
+#route .stop.here circle { fill: var(--accent); stroke: var(--accent); }
+#route .stop text { font: 600 11.5px var(--font-body); fill: var(--ink); text-anchor: middle; }
+#route .stop text.sub { font: 500 10.5px var(--font-body); fill: var(--muted); }
+#route .stop { cursor: pointer; }
+#route .mode { font: 600 10px var(--font-mono); fill: var(--muted); text-anchor: middle; letter-spacing: .06em; text-transform: uppercase; }
+#box { transition: transform .55s cubic-bezier(.4, 0, .2, 1); }
+#box rect.b { fill: var(--accent); stroke: var(--accent); stroke-width: 2; }
+#box.empty rect.b { fill: var(--panel); }
+#box.none { opacity: .25; }
+#box text { font: 600 10px var(--font-mono); fill: var(--muted); text-anchor: middle; }
+
+/* stage line on the route card */
+.stage { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.stage .k { font: 600 11px var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.stage .v { font: 600 15px var(--font-body); }
+.stage .d { font: 600 13px var(--font-mono); color: var(--muted); white-space: nowrap; }
+
+/* buckets */
+#buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.bucket { border: 2px solid var(--fc); border-radius: 12px; background: var(--panel); display: flex; flex-direction: column; min-width: 0; overflow: hidden; transition: opacity .25s, box-shadow .25s, transform .25s; opacity: .62; }
+.bucket.on { opacity: 1; box-shadow: 0 10px 28px rgb(0 0 0 / .14); transform: translateY(-3px); border-width: 3px; }
+.started .bucket { opacity: .62; } .bucket.on { opacity: 1; }
+body:not(.started) .bucket { opacity: 1; }
+.bucket .bh { background: var(--fc); color: #fff; padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+.bucket .bh .t { font: 700 13px var(--font-body); letter-spacing: .08em; text-transform: uppercase; }
+.bucket .bh .s { font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bucket .bh .n { margin-left: auto; font: 700 24px/1 var(--font-mono); }
+.pile { height: 128px; display: flex; flex-wrap: wrap-reverse; align-content: flex-start; gap: 3px; padding: 10px; background: color-mix(in srgb, var(--fc) 8%, var(--panel)); border-bottom: 2px solid var(--fc); }
+.brick { width: 22px; height: 13px; border-radius: 3px; background: var(--fc); border: 1.6px solid var(--fc); cursor: pointer; padding: 0; appearance: none; display: block; }
+.brick:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+.brick.Planned { background: var(--panel); }
+.brick.Estimated { background: linear-gradient(90deg, var(--fc) 50%, var(--panel) 50%); }
+.brick.latest { outline: 2.5px solid var(--ink); outline-offset: 1px; }
+.brick.drop { animation: drop .4s cubic-bezier(.3, 1.4, .6, 1); }
+@keyframes drop { from { transform: translateY(-60px); opacity: 0; } 50% { opacity: 1; } }
+.brick:hover { outline: 2px solid var(--ink); }
+.ev { padding: 10px 12px 12px; min-height: 118px; display: grid; align-content: start; gap: 4px; }
+.ev .h { font: 600 11.5px var(--font-mono); color: var(--muted); }
+.ev .w { font: 600 14.5px/1.3 var(--font-body); }
+.ev .m { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.ev .empty { color: var(--muted); font-size: 12.5px; }
+.ev .pub { font: 500 11px var(--font-mono); color: var(--muted); }
+.bucket.on .ev { background: color-mix(in srgb, var(--fc) 12%, var(--panel)); }
+.bucket.on .ev .w { font-size: 16px; }
+.bucket.on .ev .h { color: var(--ink); }
+
+/* mode switch */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; height: 38px; margin-right: 6px; }
+.seg button { font: 600 13px var(--font-body); border: 0; background: var(--panel); color: var(--muted); padding: 0 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+
+/* story card: the key moment, then a notch pointing at the bucket that just got the event */
+#story { border-left: 6px solid var(--fc, var(--ink)); padding: 12px 18px 14px; transition: border-color .25s; }
+#story::after { content: ''; position: absolute; bottom: -10px; left: var(--nx, 50%); width: 18px; height: 18px; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: translateX(-50%) rotate(45deg); opacity: 0; transition: left .3s, opacity .2s; }
+#story.point::after { opacity: 1; }
+#story .sh { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+#story .lab { font: 600 11px var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+#story .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 10px 22px; align-items: center; }
+#story h2 { font: 600 21px/1.2 var(--font-body); margin: 0 0 6px; }
+#story .act { margin: 0; font-size: 14.5px; }
+#story .act b { color: var(--fc, var(--ink)); }
+#story .meta { margin-top: 6px; font: 500 11.5px var(--font-mono); color: var(--muted); }
+#story.past h2, #story.past .act, #story.past .relay { opacity: .6; }
+.relay { display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1.2fr); align-items: stretch; }
+.relay .p { background: var(--panel-2); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.relay .p .k { font: 600 10.5px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.relay .p .v { font: 600 14px/1.25 var(--font-body); }
+.relay .p.none .v { color: var(--muted); font-weight: 500; }
+.relay .arr { align-self: center; text-align: center; color: var(--muted); font-weight: 700; }
+.chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--panel); color: var(--muted); font: 600 12px var(--font-mono); cursor: pointer; padding: 0; }
+.chip.done { background: var(--cc); border-color: var(--cc); color: #fff; }
+.chip.cur { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+.chip:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+
+/* progress */
+.prog { display: flex; align-items: center; gap: 10px; }
+.prog input { flex: 1; accent-color: var(--accent); }
+.prog .c { font: 600 12px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+footer { font-size: 12px; color: var(--muted); }
+footer p { margin: 0 0 4px; }
+.credit { position: absolute; right: 14px; bottom: 10px; font: 500 11px var(--font-mono); opacity: .55; }
+
+/* event card */
+#dlg { position: fixed; inset: 0; background: rgb(10 22 28 / .45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+#dlg[hidden] { display: none; }
+#dlg .modal { background: var(--panel); border-radius: 14px; padding: 16px 18px; width: min(480px, 100%); box-shadow: 0 20px 60px rgb(0 0 0 / .3); }
+#dlg h3 { font: 700 22px/1.1 var(--font-display); text-transform: uppercase; margin: 8px 0 12px; }
+#dlg .kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 13.5px; }
+#dlg .kv .k { color: var(--muted); font-size: 12px; }
+#dlg .kv .sep { grid-column: 1 / -1; border-top: 1px solid var(--line); margin: 4px 0 0; }
+@media (max-width: 900px) { .route-wrap { overflow-x: auto; } #route { min-width: 880px; } #buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); } h1 { font-size: 26px; }
+  #story .body { grid-template-columns: minmax(0, 1fr); } #story.point::after { opacity: 0; } .credit { position: static; display: block; text-align: right; margin-top: 6px; } }
+@media (max-width: 560px) { .relay { grid-template-columns: minmax(0, 1fr); gap: 4px; } .relay .arr { transform: rotate(90deg); height: 14px; line-height: 14px; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <div class="eyebrow">Track and Trace · one container · origin to destination</div>
+      <h1>Five buckets of events</h1>
+    </div>
+    <div class="controls" role="group" aria-label="Playback">
+      <div class="seg" role="group" aria-label="Mode"><button type="button" id="m-guided" aria-pressed="true">10 key moments</button><button type="button" id="m-all" aria-pressed="false">All 132 events</button></div>
+      <button class="btn" id="b-start" type="button" title="Back to the start" aria-label="Back to the start">&#x23EE;</button>
+      <button class="btn" id="b-prev" type="button" title="Back (left arrow)" aria-label="Back">&#x25C0;</button>
+      <button class="btn play" id="b-play" type="button" aria-label="Play">&#x25B6;</button>
+      <button class="btn" id="b-next" type="button" title="Next (right arrow)" aria-label="Next">&#x25B6;|</button>
+      <select id="speed" aria-label="Speed"><option value="0.5">1 event / 2 s</option><option value="1" selected>1 event/s</option><option value="2">2 events/s</option><option value="4">4 events/s</option><option value="8">8 events/s</option></select>
+    </div>
+  </header>
+
+  <section class="card" aria-label="Where the container is">
+    <div class="stage"><div><span class="k">Stage</span> <span class="v" id="stage">Before the journey</span></div><span class="d" id="when"></span></div>
+    <div class="route-wrap"><svg id="route" viewBox="0 0 1210 112" role="img" aria-label="Route from Duisburg to Chicago"></svg></div>
+  </section>
+
+  <section class="card" id="story" aria-live="polite">
+    <div class="sh"><div class="lab" id="s-lab">Ten key moments</div><div class="chips" id="chips" role="group" aria-label="Jump to a key moment"></div></div>
+    <div class="body">
+      <div><h2 id="s-title"></h2><p class="act" id="s-act"></p><div class="meta" id="s-meta"></div></div>
+      <div class="relay" id="s-relay"></div>
+    </div>
+  </section>
+
+  <section id="buckets" aria-label="Event buckets"></section>
+
+  <section class="card">
+    <div class="prog"><span class="c" id="count">0 / 0</span><input type="range" id="scrub" min="0" max="1" value="0" aria-label="Event number"><span class="c" id="date"></span></div>
+    <div class="legend" style="margin-top:8px"><span class="stg Planned">planned</span><span class="stg Estimated">estimated</span><span class="stg Actual">actual</span><span>Each brick is one event. Click it for the details.</span><span>Arrow keys step, space plays.</span><span>In key moments mode, play holds on each moment.</span></div>
+    <div class="credit">by emilio.solanes</div>
+  </section>
+
+  <footer>
+    <p><b>Illustrative storyline.</b> One temperature-controlled container from a cold store in Duisburg by rail to Rotterdam, by sea through Algeciras to New York, by rail to Chicago and by truck to the consignee, then back empty. Not a claim that any carrier publishes every event. Places are generic; company names are left out. Senders, forwarders and receivers in the ten key moments are typical roles, shown for illustration. Real trackers and reefer units report far more often than the one reading per leg shown here.</p>
+    <p>Event types and names follow the DCSA Track and Trace standard: Shipment, Transport, Equipment, IoT and Reefer.</p>
+    <p>Simulated data. Personal project, not affiliated with the companies shown. by emilio.solanes</p>
+  </footer>
+</main>
+
+<div id="dlg" hidden role="dialog" aria-modal="true"><div class="modal" id="dlg-body"></div></div>
+
+<script>
+const STORY = /*DATA*/;
+// Ten key moments, keyed by storyline row (xl): who typically sends the event, who passes it on, who needs it and what they can do with it.
+const MOMENTS = [
+  { seq: 11, title: 'Empty reefer ready at the depot', from: 'Empty depot', via: 'Carrier', to: 'Trucker, shipper', act: 'Send the truck when the box is ready, so no trip is wasted.' },
+  { seq: 29, title: 'Cooling set to +2°C', from: 'Reefer unit', via: 'Carrier', to: 'Shipper, consignee', act: 'Check the setting matches the booking before the box leaves.' },
+  { seq: 48, title: 'Tracking device enters the Rotterdam terminal', from: 'IoT provider', via: null, to: 'Shipper, carrier', act: 'See the box reach the port without waiting for the rail operator to report it.' },
+  { seq: 57, title: 'Ship departure slips to 09:00', from: 'Carrier', via: 'Visibility platform', to: 'Shipper, consignee', act: 'Move downstream bookings back six hours while there is still time.' },
+  { seq: 61, title: 'Transport document issued', from: 'Carrier', via: null, to: 'Shipper, consignee', act: 'Pass the document on so the consignee can pay and take delivery.' },
+  { seq: 73, title: 'Cargo temperature checked mid-Atlantic', from: 'Reefer unit', via: 'Carrier', to: 'Shipper, consignee', act: 'Confirm the cargo is fine at sea without phoning anyone.' },
+  { seq: 86, title: 'Customs picks the box for inspection', from: 'Terminal', via: 'Carrier', to: 'Consignee, broker, rail operator', act: 'Push the rail booking back, because the exam will not happen before Monday.' },
+  { seq: 95, title: 'Container released for collection', from: 'Carrier', via: null, to: 'Rail operator, consignee', act: 'Put the box on the next train to Chicago.' },
+  { seq: 112, title: 'Dock ready for the laden reefer', from: 'Consignee DC', via: 'Visibility platform', to: 'Trucker', act: 'Drive straight to the dock door instead of queueing at the gate.' },
+  { seq: 130, title: 'Empty back at the depot', from: 'Empty depot', via: 'Carrier', to: 'Consignee, trucker', act: 'Close the trip and stop the detention clock.' },
+];
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const FAMS = ['Shipment', 'Transport', 'Equipment', 'IoT', 'Reefer'];
+  const FCOL = { Shipment: 'var(--f-shp)', Transport: 'var(--f-trn)', Equipment: 'var(--f-eqp)', IoT: 'var(--f-iot)', Reefer: 'var(--f-rfr)' };
+  const FSUB = { Shipment: 'paperwork', Transport: 'ship, train, truck', Equipment: 'the container', IoT: 'tracking device', Reefer: 'cooling unit' };
+  const fb = (f) => `<span class="fb" style="--fc:${FCOL[f]}">${f}</span>`;
+  // when the event was published compared with when it happened (or is planned or expected to happen)
+  const lag = (e) => {
+    const m = Math.round((e.pub - e.utc) / 60), a = Math.abs(m);
+    const v = a < 90 ? `${a} min` : a < 2880 ? `${Math.round(a / 60)} h` : `${Math.round(a / 1440)} days`;
+    return m >= 0 ? `published ${v} later` : `published ${v} ahead`;
+  };
+  // the empty/laden flag describes the container the event acts on; after stuffing it is laden, after stripping it is empty
+  const ladenAfter = (e) => (e.spec === 'Stripped' ? false : e.spec === 'Stuffed' ? true : e.laden);
+
+  // route: stops and legs
+  const STOPS = [
+    { name: 'Empty depot', sub: 'Duisburg' }, { name: 'Shipper', sub: 'Duisburg' }, { name: 'Rail terminal', sub: 'Duisburg' },
+    { name: 'Port', sub: 'Rotterdam' }, { name: 'Transshipment', sub: 'Algeciras' }, { name: 'Port', sub: 'New York' },
+    { name: 'Rail ramp', sub: 'Chicago' }, { name: 'Consignee DC', sub: 'Chicago area' }, { name: 'Empty depot', sub: 'Chicago' },
+  ];
+  const X = [60, 175, 290, 420, 620, 820, 945, 1050, 1150];
+  const LEGS = ['Truck', 'Truck', 'Rail', 'Vessel', 'Vessel', 'Rail', 'Truck', 'Truck'];
+  const xAt = (pos) => { const i = Math.floor(pos), f = pos - i; return i >= X.length - 1 ? X[X.length - 1] : X[i] + (X[i + 1] - X[i]) * f; };
+  const NS = 'http://www.w3.org/2000/svg';
+  const S_ = (tag, a, p) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); p.appendChild(n); return n; };
+  const svg = $('route'); const Y = 62;
+  const legEls = LEGS.map((m, i) => { const l = S_('line', { x1: X[i], x2: X[i + 1], y1: Y, y2: Y, class: 'leg ' + m }, svg); const t = S_('text', { x: (X[i] + X[i + 1]) / 2, y: Y - 14, class: 'mode' }, svg); t.textContent = m === 'Vessel' ? 'Sea' : m; return l; });
+  { S_('line', { x1: xAt(2.55), x2: xAt(2.55), y1: Y - 10, y2: Y + 10, stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': '2 2' }, svg); }
+  const stopEls = STOPS.map((s, i) => {
+    const g = S_('g', { class: 'stop', tabindex: 0, role: 'button', 'aria-label': `Jump to ${s.name}, ${s.sub}` }, svg);
+    S_('circle', { cx: X[i], cy: Y, r: 7 }, g);
+    const a = S_('text', { x: X[i], y: Y + 28 }, g); a.textContent = s.name;
+    const b = S_('text', { x: X[i], y: Y + 43, class: 'sub' }, g); b.textContent = s.sub;
+    const jump = () => { const n = STORY.findIndex((e) => e.pos === i); if (n >= 0) { stop(); go(n + 1); } };
+    g.addEventListener('click', jump); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); jump(); } });
+    return g;
+  });
+  const box = S_('g', { id: 'box', class: 'none' }, svg);
+  S_('rect', { x: -13, y: -32, width: 26, height: 16, rx: 2, class: 'b' }, box);
+  const boxT = S_('text', { x: 0, y: -38 }, box);
+
+  // buckets
+  const B = {};
+  for (const f of FAMS) {
+    const el = document.createElement('div'); el.className = 'bucket'; el.dataset.family = f; el.style.setProperty('--fc', FCOL[f]);
+    el.innerHTML = `<div class="bh"><span class="t">${f}</span><span class="s">${FSUB[f]}</span><span class="n">0</span></div><div class="pile" role="group" aria-label="${f} events"></div><div class="ev"></div>`;
+    $('buckets').appendChild(el);
+    const pile = el.querySelector('.pile');
+    // up and down arrows move between bricks in a bucket
+    pile.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+      ev.preventDefault(); ev.stopPropagation();
+      const t = ev.key === 'ArrowUp' ? document.activeElement.nextElementSibling : document.activeElement.previousElementSibling;
+      if (t) t.focus();
+    });
+    B[f] = { el, n: el.querySelector('.n'), ev: el.querySelector('.ev'), pile };
+  }
+
+  // key moments
+  const MK = MOMENTS.map((m) => { const i = STORY.findIndex((e) => (e.xl ?? e.seq) === m.seq); return { ...m, k: i + 1, e: STORY[i] }; });
+  const chips = MK.map((m, i) => {
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = i + 1;
+    c.style.setProperty('--cc', FCOL[m.e.family]); c.dataset.moment = i + 1; c.title = m.title; c.setAttribute('aria-label', `Moment ${i + 1}: ${m.title}`);
+    c.onclick = () => runTo(m.k);
+    $('chips').appendChild(c); return c;
+  });
+
+  let k = 0, mode = 'guided', timer = null, playing = false, lastFocus = null;
+  const sc = $('scrub'); sc.max = STORY.length;
+
+  function story() {
+    const el = $('story');
+    let i = -1; MK.forEach((m, j) => { if (m.k <= k) i = j; });
+    const m = MK[i], at = !!m && m.k === k, next = MK[i + 1];
+    chips.forEach((c, j) => { c.classList.toggle('done', j <= i); c.classList.toggle('cur', !!at && j === i); });
+    if (!m) {
+      el.style.removeProperty('--fc'); el.classList.remove('past', 'point');
+      $('s-lab').textContent = 'Ten key moments';
+      $('s-title').textContent = 'One reefer container, Duisburg to Chicago and back';
+      $('s-act').innerHTML = 'Every event lands in one of five buckets. Ten of them show why sharing matters: who sent it, who passed it on, who needs it and what they can do with it.';
+      $('s-meta').textContent = mode === 'guided' ? 'Press ▶| for the first moment, or ▶ to play.' : `Press ▶ to play all ${STORY.length} events.`;
+      $('s-relay').innerHTML = '';
+      return;
+    }
+    el.style.setProperty('--fc', FCOL[m.e.family]);
+    el.classList.toggle('past', !at);
+    $('s-lab').innerHTML = `${at ? 'Moment' : 'Last moment'} ${i + 1} of ${MK.length} ${fb(m.e.family)} <span class="st ${m.e.status}">${m.e.status}</span>`;
+    $('s-title').textContent = m.title;
+    $('s-act').innerHTML = `<b>What they can do:</b> ${esc(m.act)}`;
+    $('s-meta').textContent = at ? `#${m.e.seq} · ${m.e.local} ${m.e.tz} · ${lag(m.e)}` : next ? `Next: moment ${i + 2}, ${next.title}` : 'End of the journey';
+    $('s-relay').innerHTML = `<div class="p"><div class="k">Sent by</div><div class="v">${esc(m.from)}</div></div><div class="arr" aria-hidden="true">→</div>
+      <div class="p${m.via ? '' : ' none'}"><div class="k">Forwarded by</div><div class="v">${m.via ? esc(m.via) : 'Nobody, sent direct'}</div></div><div class="arr" aria-hidden="true">→</div>
+      <div class="p"><div class="k">Who needs it</div><div class="v">${esc(m.to)}</div></div>`;
+    // notch above the bucket that just received this event
+    el.classList.toggle('point', at);
+    if (at) { const r = B[m.e.family].el.getBoundingClientRect(), c = el.getBoundingClientRect(); el.style.setProperty('--nx', `${r.left + r.width / 2 - c.left}px`); }
+  }
+
+  function go(n, animate) {
+    n = Math.max(0, Math.min(STORY.length, n));
+    const prev = k; k = n;
+    const hadFocus = document.activeElement && document.activeElement.classList.contains('brick');
+    for (const f of FAMS) {
+      const pile = B[f].pile;
+      const want = STORY.slice(0, k).filter((e) => e.family === f);
+      while (pile.children.length > want.length) pile.lastChild.remove();
+      for (let i = pile.children.length; i < want.length; i++) {
+        const e = want[i];
+        const b = document.createElement('button'); b.type = 'button'; b.dataset.seq = e.seq;
+        b.className = 'brick ' + e.status + (animate && n === prev + 1 ? ' drop' : '');
+        b.title = `#${e.seq} ${e.what} (${e.status.toLowerCase()})`;
+        b.setAttribute('aria-label', `Event ${e.seq}, ${e.status.toLowerCase()}: ${e.what}`);
+        b.addEventListener('click', () => card(e, b));
+        pile.appendChild(b);
+      }
+      // one tab stop per bucket: its newest brick
+      [...pile.children].forEach((b, i, all) => { b.tabIndex = i === all.length - 1 ? 0 : -1; });
+      B[f].n.textContent = want.length;
+      const l = want[want.length - 1];
+      const far = l && Math.abs(l.pub - l.utc) > 1800;
+      B[f].ev.innerHTML = l ? `<div class="h">#${l.seq} · ${esc(l.local)} ${esc(l.tz)}</div><div class="w">${esc(l.what)}</div><div class="m"><span class="st ${l.status}">${l.status}</span><span>${esc(l.where || 'Paperwork, no location')}</span></div>${far ? `<div class="pub">${lag(l)}</div>` : ''}` : '<div class="empty">No events yet</div>';
+      B[f].el.classList.remove('on');
+    }
+    document.body.classList.toggle('started', k > 0);
+    document.querySelectorAll('.brick.latest').forEach((b) => b.classList.remove('latest'));
+    const e = STORY[k - 1];
+    if (e) { const pile = B[e.family].pile; if (pile.lastChild) pile.lastChild.classList.add('latest'); }
+    if (hadFocus && !document.activeElement.classList.contains('brick') && e) B[e.family].pile.lastChild.focus();
+    // container on the route
+    let pos = null, laden = null;
+    for (let i = 0; i < k; i++) { if (STORY[i].pos !== null) pos = STORY[i].pos; const l = ladenAfter(STORY[i]); if (l !== null) laden = l; }
+    box.setAttribute('class', pos === null ? 'none' : laden ? '' : 'empty');
+    box.setAttribute('transform', `translate(${xAt(pos === null ? 0 : pos)},${Y})`);
+    boxT.textContent = pos === null ? 'no container yet' : laden ? 'laden' : 'empty';
+    legEls.forEach((l, i) => l.classList.toggle('done', pos !== null && pos >= i + 1));
+    stopEls.forEach((g, i) => g.classList.toggle('here', pos === i));
+    // on narrow screens the route scrolls; keep the container in view
+    const wrap = svg.parentElement;
+    if (wrap.scrollWidth > wrap.clientWidth) wrap.scrollTo({ left: xAt(pos === null ? 0 : pos) * (svg.clientWidth / 1210) - wrap.clientWidth / 2, behavior: animate ? 'smooth' : 'auto' });
+    if (e) B[e.family].el.classList.add('on');
+    $('stage').textContent = e ? e.section : 'Before the journey';
+    $('when').textContent = e ? `#${e.seq} · ${e.local} ${e.tz}` : '';
+    sc.value = k; $('count').textContent = `${k} / ${STORY.length}`; $('date').textContent = e ? e.local.split(' ').slice(0, 3).join(' ') : '';
+    $('buckets').setAttribute('aria-label', e ? `Event ${e.seq}: ${e.family}, ${e.what}` : 'Event buckets');
+    story();
+  }
+
+  function card(e, from) {
+    lastFocus = from || null;
+    const m = MK.find((x) => x.e === e);
+    $('dlg-body').innerHTML = `<div>${fb(e.family)} <span class="st ${e.status}">${e.status}</span></div><h3>${esc(e.what)}</h3>
+      <div class="kv"><div class="k">Event</div><div>#${e.seq} of ${STORY.length}</div>
+      <div class="k">Type</div><div>${e.family}: ${esc(e.spec)}</div>
+      <div class="k">${e.status === 'Actual' ? 'Happened' : e.status === 'Planned' ? 'Planned for' : 'Expected'}</div><div>${esc(e.local)} ${esc(e.tz)}</div>
+      <div class="k">Published</div><div>${lag(e).replace('published ', '')}</div>
+      <div class="k">Where</div><div>${esc(e.where || 'No location: paperwork')}</div>
+      ${e.mode ? `<div class="k">Moving by</div><div>${esc(e.mode)}</div>` : ''}
+      <div class="k">Stage</div><div>${esc(e.section)}</div>
+      ${m ? `<div class="sep"></div><div class="k">Sent by</div><div>${esc(m.from)}</div><div class="k">Forwarded by</div><div>${esc(m.via || 'Nobody, sent direct')}</div><div class="k">Who needs it</div><div>${esc(m.to)}</div><div class="k">What they can do</div><div>${esc(m.act)}</div>` : ''}</div>
+      <p style="margin:14px 0 0"><button class="btn" id="dlg-close" type="button">Close</button></p>`;
+    $('dlg').hidden = false; $('dlg-close').onclick = closeCard; $('dlg-close').focus();
+  }
+  function closeCard() { $('dlg').hidden = true; if (lastFocus && lastFocus.isConnected) lastFocus.focus(); lastFocus = null; }
+  $('dlg').addEventListener('click', (ev) => { if (ev.target.id === 'dlg') closeCard(); });
+
+  // playback: in key moments mode play holds on each moment
+  const HOLD = 5000;
+  function stop() { clearTimeout(timer); timer = null; setPlaying(false); }
+  function setPlaying(v) { playing = v; $('b-play').innerHTML = v ? '&#x23F8;' : '&#x25B6;'; $('b-play').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+  function play() {
+    clearTimeout(timer); setPlaying(true);
+    if (k >= STORY.length) go(0);
+    const tick = () => {
+      if (k >= STORY.length) return stop();
+      go(k + 1, true);
+      const hold = mode === 'guided' && MK.some((m) => m.k === k);
+      timer = setTimeout(tick, hold ? HOLD : 1000 / +$('speed').value);
+    };
+    tick();
+  }
+  // fast fill up to a target, so the buckets visibly fill on the way to a moment
+  function runTo(target) {
+    clearTimeout(timer); setPlaying(false);
+    if (target <= k) return go(target);
+    const step = Math.max(12, Math.min(60, 1100 / (target - k)));
+    const tick = () => { go(k + 1, true); if (k < target) timer = setTimeout(tick, step); else timer = null; };
+    tick();
+  }
+  const next = () => { if (mode === 'all') { stop(); go(k + 1, true); return; } const m = MK.find((x) => x.k > k); runTo(m ? m.k : STORY.length); };
+  const back = () => { stop(); if (mode === 'all') return go(k - 1); const m = [...MK].reverse().find((x) => x.k < k); go(m ? m.k : 0); };
+  function setMode(v) {
+    mode = v; $('m-guided').setAttribute('aria-pressed', v === 'guided'); $('m-all').setAttribute('aria-pressed', v === 'all');
+    $('b-next').title = v === 'guided' ? 'Next moment (right arrow)' : 'Next event (right arrow)';
+    $('b-prev').title = v === 'guided' ? 'Previous moment (left arrow)' : 'Previous event (left arrow)';
+    if (playing) play(); story();
+  }
+  $('m-guided').onclick = () => setMode('guided');
+  $('m-all').onclick = () => setMode('all');
+  $('b-play').onclick = () => (playing ? stop() : play());
+  $('b-next').onclick = next;
+  $('b-prev').onclick = back;
+  $('b-start').onclick = () => { stop(); go(0); };
+  $('speed').onchange = () => { if (playing) play(); };
+  sc.oninput = () => { stop(); go(+sc.value); };
+  window.addEventListener('resize', story);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('dlg').hidden) return closeCard();
+    if (!$('dlg').hidden) return;
+    const t = document.activeElement.tagName;
+    if (/INPUT|SELECT/.test(t)) return;
+    if (t === 'BUTTON' && (ev.key === ' ' || ev.key === 'Enter')) return;
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); next(); }
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); back(); }
+    if (ev.key === ' ') { ev.preventDefault(); playing ? stop() : play(); }
+  });
+  go(0);
+  // test and recording hooks: read state, open or close an event card, data. Nothing here changes what the user sees.
+  const state = () => {
+    const e = STORY[k - 1] || null; let mi = -1; MK.forEach((m, j) => { if (m.k <= k) mi = j; });
+    const counts = Object.fromEntries(FAMS.map((f) => [f, STORY.slice(0, k).filter((x) => x.family === f).length]));
+    return { k, total: STORY.length, mode, playing, busy: timer !== null, event: e, moment: mi + 1, atMoment: mi >= 0 && MK[mi].k === k, counts, cardOpen: !$('dlg').hidden };
+  };
+  const openCard = (seq) => { const e = STORY.find((x) => x.seq === seq); if (e) card(e, document.querySelector(`.brick[data-seq="${seq}"]`)); };
+  window.__tnt = { go, play, stop, runTo, setMode, next, back, state, card: openCard, closeCard, story: STORY, moments: MK, families: FAMS };
+})();
+</script>
+</body>
+</html>
